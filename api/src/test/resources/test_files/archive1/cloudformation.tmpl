@@ -1,0 +1,306 @@
+{
+	"AWSTemplateFormatVersion" : "2010-09-09",
+
+	"Resources" : {
+		
+		"vpc" : {
+			"Type": "AWS::EC2::VPC",
+			"Properties": {
+				"CidrBlock": "10.0.0.0/16",
+				"EnableDnsSupport": "true",
+				"EnableDnsHostnames": "true",
+				"InstanceTenancy": "default",
+				"Tags": [
+					{"Key": "Name", "Value": "sb-dev-vpc-01"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				]
+			}
+		},
+		
+		"internetGateway": {
+			"Type": "AWS::EC2::InternetGateway",
+			"DependsOn": "vpc",
+			"Properties": {
+				"Tags": [
+					{"Key": "Name", "Value": "sb-dev-igw-01"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				]
+			}
+		},
+		
+		"igwToVpcAttachment": {
+			"Type": "AWS::EC2::VPCGatewayAttachment",
+			"DependsOn": ["vpc", "internetGateway"],
+			"Properties": {
+				"VpcId": {"Ref": "vpc"},
+				"InternetGatewayId": {"Ref": "internetGateway"}
+			}
+		},
+		
+		
+		
+		"internetRouteTable" : {
+			"Type": "AWS::EC2::RouteTable",
+			"DependsOn": ["igwToVpcAttachment"],
+			"Properties": {
+				"VpcId": {"Ref": "vpc"},
+				"Tags": [
+					{"Key": "Name", "Value": "sb-dev-routeTable-01"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				]
+			}
+		},
+		"internetRoute" : {
+			"Type": "AWS::EC2::Route",
+			"DependsOn" : ["internetGateway", "internetRouteTable"],
+			"Properties": {
+				"GatewayId": {"Ref": "internetGateway"},
+				"DestinationCidrBlock": "0.0.0.0/0",
+				"RouteTableId": {"Ref": "internetRouteTable"}
+			}
+		},
+		
+		
+		
+		"internetNetworkAcl": {
+			"Type": "AWS::EC2::NetworkAcl",
+			"DependsOn": "vpc",
+			"Properties": {
+				"VpcId": {"Ref": "vpc"},
+				"Tags": [
+					{"Key": "Name", "Value": "sb-dev-networkAcl-01"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				]
+			}
+		},
+		"inboundSSHInternetNetworkAclEntry" : {
+			"Type": "AWS::EC2::NetworkAclEntry",
+			"DependsOn": "internetNetworkAcl",
+			"Properties": {
+				"NetworkAclId": {"Ref": "internetNetworkAcl"},
+				"Egress": "false",
+				"RuleNumber": "100",
+				"Protocol": "6",
+				"PortRange": {"From": "0", "To": "65535"},
+				"RuleAction": "allow",
+				"CidrBlock" : "0.0.0.0/0"
+			}
+		},
+		"outboundInternetNetworkAclEntry" : {
+			"Type" : "AWS::EC2::NetworkAclEntry",
+			"DependsOn": "internetNetworkAcl",
+			"Properties" : {
+				"NetworkAclId" : { "Ref" : "internetNetworkAcl" },
+				"RuleNumber" : "100",
+				"Protocol" : "6",
+				"RuleAction" : "allow",
+				"Egress" : "true",
+				"CidrBlock" : "0.0.0.0/0",
+				"PortRange" : { "From" : "0", "To" : "65535" }
+			}
+		},
+		
+		
+		
+		"webSubnetAzUsEast1a02" : {
+			"Type": "AWS::EC2::Subnet",
+			"DependsOn": "vpc",
+			"Properties": {
+				"VpcId": { "Ref": "vpc" },
+				"CidrBlock": "10.0.1.0/24",
+				"AvailabilityZone": "us-east-1a",
+				"Tags": [
+					{"Key": "Name", "Value": "sb-dev-subnet-us-east-1a-01"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				]
+			}
+		},
+		"webSubnetAzUsEast1a01ToInternetRouteTableAssociation": {
+			"Type": "AWS::EC2::SubnetRouteTableAssociation",
+			"DependsOn" : ["internetRouteTable", "webSubnetAzUsEast1a02"],
+			"Properties": {
+				"RouteTableId": {"Ref":"internetRouteTable"},
+				"SubnetId": {"Ref": "webSubnetAzUsEast1a02"}
+			}
+		},
+		"webSubnetAzUsEast1a01ToInternetNetworkAclAssociation": {
+			"Type": "AWS::EC2::SubnetNetworkAclAssociation",
+			"DependsOn" : ["internetNetworkAcl", "webSubnetAzUsEast1a02"],
+			"Properties": {
+				"NetworkAclId": {"Ref":"internetNetworkAcl"},
+				"SubnetId": {"Ref": "webSubnetAzUsEast1a02"}
+			}
+		},
+		
+		
+		
+		"OpenSecurityGroup2" : {
+			"Type" : "AWS::EC2::SecurityGroup",
+			"DependsOn": "vpc",
+			"Properties" : {
+				"GroupDescription" : "Allow http to client host",
+				"VpcId" : {"Ref" : "vpc"},
+				"SecurityGroupIngress" : [{
+					"IpProtocol" : "TCP",
+					"FromPort" : "0",
+					"ToPort" : "65535",
+					"CidrIp" : "0.0.0.0/0"
+				}],
+				"SecurityGroupEgress" : [{
+					"IpProtocol" : "TCP",
+					"FromPort" : "0",
+					"ToPort" : "65535",
+					"CidrIp" : "0.0.0.0/0"
+				}]
+			}
+		},
+		
+		
+		
+		"ZookeeperServer" : {
+			"Type" : "AWS::EC2::Instance",
+			"DependsOn" : ["internetGateway", "webSubnetAzUsEast1a02", "OpenSecurityGroup2"],
+			"Properties" : {
+				"ImageId" : "ami-08842d60",
+				"InstanceType" : "t2.micro",
+				"KeyName" : "SecureCacheAdmin",
+				"IamInstanceProfile" : "s3_access_full", 
+				"Monitoring" : "true",
+				"NetworkInterfaces" : [{
+					"GroupSet" : [{ "Ref" : "OpenSecurityGroup2" }],
+					"AssociatePublicIpAddress" : "true",
+					"DeviceIndex" : "0",
+					"DeleteOnTermination" : "true",
+					"SubnetId" : { "Ref" : "webSubnetAzUsEast1a02" }
+				}],
+				"Tags": [
+					{"Key": "Name", "Value": "zookeeper-sb-dev-subnet-us-east-1a-02"},
+					{"Key": "Project", "Value": "Sandbox"},
+					{"Key": "Environment", "Value": "Development"}
+				],
+				"Tenancy" : "default",
+                "UserData" : { "Fn::Base64" :
+                                { "Fn::Join" : ["",[
+                                                    "#!/bin/bash -ex","\n",
+                                                    "wget -O /etc/yum.repos.d/cloudera-cdh5.repo http://archive.cloudera.com/cdh5/redhat/6/x86_64/cdh/cloudera-cdh5.repo","\n",
+                                                    "yum -y install java-1.7.0-openjdk.x86_64","\n",
+                                                    "yum -y install puppet","\n",
+                                                    "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                                                                  "\"Reason\" : \"The Puppet application has been installed\",",
+                                                                  "\"UniqueId\" : \"zookeeper\",",
+                                                                  "\"Data\" : \"Done\"}' ",
+                                                                  "\"", {"Ref" : "WaitForInstanceWaitHandle"},"\"\n"
+                                                    ]
+                                                ]
+                                }
+                }
+                
+			}
+		},
+    
+        "WaitForInstanceWaitHandle" : {
+            "Type" : "AWS::CloudFormation::WaitConditionHandle",
+            "Properties" : {
+            }
+        },
+    
+        "WaitForInstance" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "DependsOn" : "ZookeeperServer",
+            "Properties" : {
+                "Handle" : {"Ref" : "WaitForInstanceWaitHandle"},
+                "Timeout" : "600"
+            }
+        },
+        
+        "NameNodeServer" : {
+            "Type" : "AWS::EC2::Instance",
+            "DependsOn" : ["internetGateway", "webSubnetAzUsEast1a02", "OpenSecurityGroup2"],
+            "Properties" : {
+                "ImageId" : "ami-08842d60",
+                "InstanceType" : "t2.micro",
+                "KeyName" : "SecureCacheAdmin",
+                "IamInstanceProfile" : "s3_access_full", 
+                "Monitoring" : "true",
+                "NetworkInterfaces" : [{
+                                       "GroupSet" : [{ "Ref" : "OpenSecurityGroup2" }],
+                                       "AssociatePublicIpAddress" : "true",
+                                       "DeviceIndex" : "0",
+                                       "DeleteOnTermination" : "true",
+                                       "SubnetId" : { "Ref" : "webSubnetAzUsEast1a02" }
+                                       }],
+                "Tags": [
+                         {"Key": "Name", "Value": "namenode-sb-dev-subnet-us-east-1a-02"},
+                         {"Key": "Project", "Value": "Sandbox"},
+                         {"Key": "Environment", "Value": "Development"}
+                         ],
+                "Tenancy" : "default",
+                "UserData" : { "Fn::Base64" :
+                    { "Fn::Join" : ["",[
+                                        "#!/bin/bash -ex","\n",
+                                        "wget -O /etc/yum.repos.d/cloudera-cdh5.repo http://archive.cloudera.com/cdh5/redhat/6/x86_64/cdh/cloudera-cdh5.repo","\n",
+                                        "yum -y install java-1.7.0-openjdk.x86_64","\n",
+                                        "yum -y install puppet","\n",
+                                        "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
+                                        "\"Reason\" : \"The Puppet application has been installed\",",
+                                        "\"UniqueId\" : \"namenode\",",
+                                        "\"Data\" : \"Done\"}' ",
+                                        "\"", {"Ref" : "WaitForInstanceWaitHandleNameNode"},"\"\n"
+                                        ]
+                                    ]
+                    }
+                }
+                
+            }
+        },
+        
+        "NameNodeDNSRecord" : {
+          "Type" : "AWS::Route53::RecordSet",
+          "Properties" : {
+              "HostedZoneName" : "scache.co.",
+              "Comment" : "A record for my Name Node Server",
+              "Name" : "namenode.dev.scache.co.",
+              "Type" : "A",
+              "TTL" : "300",
+              "ResourceRecords" : [
+                                   {"Fn::GetAtt" : ["NameNodeServer", "PublicIp"]}
+                                   ]
+          }
+      },
+        
+        "WaitForInstanceWaitHandleNameNode" : {
+            "Type" : "AWS::CloudFormation::WaitConditionHandle",
+            "Properties" : {
+            }
+        },
+        
+        "WaitForInstanceNameNode" : {
+            "Type" : "AWS::CloudFormation::WaitCondition",
+            "DependsOn" : "NameNodeServer",
+            "Properties" : {
+                "Handle" : {"Ref" : "WaitForInstanceWaitHandleNameNode"},
+                "Timeout" : "600"
+            }
+        }
+    
+    
+    
+    
+	},
+
+
+
+    "Outputs" : {
+        "ZookeeperIPAddress" : {
+            "Description" : "The IP address for the zookeeper server",
+            "Value" : { "Fn::GetAtt" : [ "ZookeeperServer", "PublicIp" ] }
+        }
+    }
+
+} 
+

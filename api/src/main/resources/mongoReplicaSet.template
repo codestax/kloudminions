@@ -1,0 +1,597 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+
+  "Description" : "mongo replica set with four instances, two in each availability zone",
+
+  "Parameters" : {
+    "InstanceType" : {
+      "Description" : "Type of EC2 instance to launch",
+      "Type" : "String",
+      "Default" : "t1.micro"
+    },
+    "AccessKey" : {
+      "Description" : "aws access key",
+      "Type" : "String",
+      "NoEcho" : "true"
+    },
+    "SecretKey" : {
+      "Description" : "aws secret key",
+      "Type" : "String",
+      "NoEcho" : "true"
+    },
+    "AZ1" : {
+      "Description" : "first availability zone",
+      "Type" : "String"
+    },
+    "AZ2" : {
+      "Description" : "second availability zone",
+      "Type" : "String"
+    },
+    "subnet1" : {
+      "Description" : "first subnet",
+      "Type" : "String"
+    },
+    "subnet2" : {
+      "Description" : "second subnet",
+      "Type" : "String"
+    },
+    "AppServerSecurityGroupId" : {
+      "Description" : "vpc security group id of the App Server",
+      "Type" : "String"
+    },
+    "VpcId" : {
+      "Description" : "vpc id",
+      "Type" : "String"
+    },
+    "KeyName" : {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type" : "String"
+    }
+  },
+
+  "Mappings" : {
+    "RegionMap" : {
+      "us-east-1" : {
+          "AMI" : "ami-bba18dd2",
+          "SnapshotId" : "snap-99739c8d"
+      },
+      "us-west-2" : {
+          "AMI" : "ami-ccf297fc",
+          "SnapshotId" : "snap-db51c6ea"
+      },
+      "us-west-1" : {
+          "AMI" : "ami-a43909e1"
+      },
+      "eu-west-1" : {
+          "AMI" : "ami-5256b825"
+      },
+      "ap-southeast-1" : {
+          "AMI" : "ami-b4baeee6"
+      },
+      "ap-northeast-1" : {
+          "AMI" : "ami-0d13700c"
+      },
+      "ap-southeast-2" : {
+          "AMI" : "ami-5ba83761"
+      },
+      "sa-east-1" : {
+          "AMI" : "ami-c99130d4"
+      }
+    }
+  },
+
+  "Resources" : {
+  
+    "mongoReplicaA1" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoReplicaA1" }],
+        "Volumes" : [
+           { "VolumeId" : { "Ref" : "mongoVolumeA1" }, "Device" : "/dev/sdf" }
+         ],
+        "SecurityGroupIds" : [ { "Ref" : "mongoProdReplicaSetSecurityGroupBase" } ],
+        "KeyName" : { "Ref" : "KeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "AvailabilityZone" : { "Ref" : "AZ1" },
+        "SubnetId" : { "Ref" : "subnet1" },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
+            "#!/bin/bash -x","\n",
+            "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1","\n",
+            "ls -al ~\n",
+            "export EC2_ACCESS_KEY=", { "Ref" : "AccessKey" }, "\n",
+            "export EC2_SECRET_KEY=", { "Ref" : "SecretKey" }, "\n", 
+            "export AWS_ACCESS_KEY_ID=", { "Ref" : "AccessKey" }, "\n",
+            "export AWS_SECRET_ACCESS_KEY=", { "Ref" : "SecretKey" }, "\n",
+            "export AWS_DEFAULT_REGION=", { "Ref" : "AWS::Region" }, "\n",
+            
+            "env |sort\n",
+            "yum update -y aws-cfn-bootstrap\n",
+  
+            "# Helper function\n",
+            "function error_exit\n",
+            "{\n",
+            "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '", { "Ref" : "WaitHandleA1" }, "'\n",
+            "  exit 1\n",
+            "}\n",
+
+            "curl https://raw.github.com/timkay/aws/master/aws -o aws","\n",
+            "perl aws --install","\n",
+            
+            "s3get ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "aws s3 cp s3://ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "chmod 755 /home/ec2-user/setupMongoServerFromS3.sh\n",
+            "/home/ec2-user/setupMongoServerFromS3.sh\n",
+            
+            "# All is well so signal success\n",
+            "/opt/aws/bin/cfn-signal -e 0 -r \"mongoReplicaA1 setup complete\" '", { "Ref" : "WaitHandleA1" }, "'\n"
+           ]] }
+         }
+      }
+    },
+    "ElasticIPA1" : {
+       "Type" : "AWS::EC2::EIP",
+       "Properties" : {
+          "InstanceId" : { "Ref" : "mongoReplicaA1" },
+          "Domain" : "vpc"
+       }
+    },
+    "WaitHandleA1" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitConditionA1" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "mongoReplicaA1",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitHandleA1"},
+        "Timeout" : "1600"
+      }
+    },
+    
+    "mongoVolumeA1" : {
+      "Type" : "AWS::EC2::Volume",
+      "Properties" : {
+        "SnapshotId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "SnapshotId" ]},
+        "AvailabilityZone" : { "Ref" : "AZ1" },
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoVolumeA1" }]
+      }
+    },
+
+    "mongoReplicaA2" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoReplicaA2" }],
+        "Volumes" : [
+           { "VolumeId" : { "Ref" : "mongoVolumeA2" }, "Device" : "/dev/sdf" }
+         ],
+        "SecurityGroupIds" : [ { "Ref" : "mongoProdReplicaSetSecurityGroupBase" } ],
+        "KeyName" : { "Ref" : "KeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "AvailabilityZone" : { "Ref" : "AZ1" },
+        "SubnetId" : { "Ref" : "subnet1" },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
+            "#!/bin/bash -x","\n",
+            "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1","\n",
+            "ls -al ~\n",
+            "export EC2_ACCESS_KEY=", { "Ref" : "AccessKey" }, "\n",
+            "export EC2_SECRET_KEY=", { "Ref" : "SecretKey" }, "\n", 
+            "export AWS_ACCESS_KEY_ID=", { "Ref" : "AccessKey" }, "\n",
+            "export AWS_SECRET_ACCESS_KEY=", { "Ref" : "SecretKey" }, "\n",
+            "export AWS_DEFAULT_REGION=", { "Ref" : "AWS::Region" }, "\n",
+            
+            "env |sort\n",
+            "yum update -y aws-cfn-bootstrap\n",
+  
+            "# Helper function\n",
+            "function error_exit\n",
+            "{\n",
+            "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '", { "Ref" : "WaitHandleA2" }, "'\n",
+            "  exit 1\n",
+            "}\n",
+
+            "curl https://raw.github.com/timkay/aws/master/aws -o aws","\n",
+            "perl aws --install","\n",
+            
+            "s3get ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "aws s3 cp s3://ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "chmod 755 /home/ec2-user/setupMongoServerFromS3.sh\n",
+            "/home/ec2-user/setupMongoServerFromS3.sh\n",
+            
+            "# All is well so signal success\n",
+            "/opt/aws/bin/cfn-signal -e 0 -r \"mongoReplicaA2 setup complete\" '", { "Ref" : "WaitHandleA2" }, "'\n"
+            ]] }
+         }
+      }
+    },
+    "ElasticIPA2" : {
+       "Type" : "AWS::EC2::EIP",
+       "Properties" : {
+          "InstanceId" : { "Ref" : "mongoReplicaA2" },
+          "Domain" : "vpc"
+       }
+    },
+    "WaitHandleA2" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitConditionA2" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "mongoReplicaA2",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitHandleA2"},
+        "Timeout" : "1600"
+      }
+    },
+    
+    "mongoVolumeA2" : {
+      "Type" : "AWS::EC2::Volume",
+      "Properties" : {
+        "SnapshotId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "SnapshotId" ]},
+        "AvailabilityZone" : { "Ref" : "AZ1" },
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoVolumeA2" }]
+      }
+    },
+
+    "mongoReplicaC1" : {
+      "Type" : "AWS::EC2::Instance",
+      "Properties" : {
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoReplicaC1" }],
+        "Volumes" : [
+           { "VolumeId" : { "Ref" : "mongoVolumeC1" }, "Device" : "/dev/sdf" }
+         ],
+        "SecurityGroupIds" : [ { "Ref" : "mongoProdReplicaSetSecurityGroupBase" } ],
+        "KeyName" : { "Ref" : "KeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "AvailabilityZone" : { "Ref" : "AZ2" },
+        "SubnetId" : { "Ref" : "subnet2" },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
+            "#!/bin/bash -x","\n",
+            "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1","\n",
+            "ls -al ~\n",
+            "export EC2_ACCESS_KEY=", { "Ref" : "AccessKey" }, "\n",
+            "export EC2_SECRET_KEY=", { "Ref" : "SecretKey" }, "\n", 
+            "export AWS_ACCESS_KEY_ID=", { "Ref" : "AccessKey" }, "\n",
+            "export AWS_SECRET_ACCESS_KEY=", { "Ref" : "SecretKey" }, "\n",
+            "export AWS_DEFAULT_REGION=", { "Ref" : "AWS::Region" }, "\n",
+            
+            "env |sort\n",
+            "yum update -y aws-cfn-bootstrap\n",
+  
+            "# Helper function\n",
+            "function error_exit\n",
+            "{\n",
+            "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '", { "Ref" : "WaitHandleC1" }, "'\n",
+            "  exit 1\n",
+            "}\n",
+
+            "curl https://raw.github.com/timkay/aws/master/aws -o aws","\n",
+            "perl aws --install","\n",
+            
+            "s3get ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "aws s3 cp s3://ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "chmod 755 /home/ec2-user/setupMongoServerFromS3.sh\n",
+            "/home/ec2-user/setupMongoServerFromS3.sh\n",
+            
+            "# All is well so signal success\n",
+            "/opt/aws/bin/cfn-signal -e 0 -r \"mongoReplicaC1 setup complete\" '", { "Ref" : "WaitHandleC1" }, "'\n"
+            ]] }
+         }
+      }
+    },
+    "ElasticIPC1" : {
+       "Type" : "AWS::EC2::EIP",
+       "Properties" : {
+          "InstanceId" : { "Ref" : "mongoReplicaC1" },
+          "Domain" : "vpc"
+       }
+    },
+    "WaitHandleC1" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitConditionC1" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "mongoReplicaC1",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitHandleC1"},
+        "Timeout" : "1600"
+      }
+    },
+    
+    "mongoVolumeC1" : {
+      "Type" : "AWS::EC2::Volume",
+      "Properties" : {
+        "SnapshotId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "SnapshotId" ]},
+        "AvailabilityZone" : { "Ref" : "AZ2" },
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoVolumeC1" }]
+      }
+    },
+
+    "mongoReplicaC2" : {
+      "Type" : "AWS::EC2::Instance",
+      "DependsOn" : ["WaitConditionA1", "WaitConditionA2", "WaitConditionC1"],
+      "Properties" : {
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoReplicaC2" }],
+        "Volumes" : [
+           { "VolumeId" : { "Ref" : "mongoVolumeC2" }, "Device" : "/dev/sdf" }
+         ],
+        "SecurityGroupIds" : [ { "Ref" : "mongoProdReplicaSetSecurityGroupBase" } ],
+        "KeyName" : { "Ref" : "KeyName" },
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "AvailabilityZone" : { "Ref" : "AZ2" },
+        "SubnetId" : { "Ref" : "subnet2" },
+        "InstanceType" : { "Ref" : "InstanceType" },
+        "UserData" : { "Fn::Base64" : { "Fn::Join" : ["",[
+            "#!/bin/bash -x","\n",
+            "exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1","\n",
+            "ls -al ~\n",
+            "export EC2_ACCESS_KEY=", { "Ref" : "AccessKey" }, "\n",
+            "export EC2_SECRET_KEY=", { "Ref" : "SecretKey" }, "\n", 
+            "export AWS_ACCESS_KEY_ID=", { "Ref" : "AccessKey" }, "\n",
+            "export AWS_SECRET_ACCESS_KEY=", { "Ref" : "SecretKey" }, "\n",
+            "export AWS_DEFAULT_REGION=", { "Ref" : "AWS::Region" }, "\n",
+            
+            "env |sort\n",
+            "yum update -y aws-cfn-bootstrap\n",
+  
+            "# Helper function\n",
+            "function error_exit\n",
+            "{\n",
+            "  /opt/aws/bin/cfn-signal -e 0 -r \"$1\" '", { "Ref" : "WaitHandleC2" }, "'\n",
+            "  exit 1\n",
+            "}\n",
+
+            "curl https://raw.github.com/timkay/aws/master/aws -o aws","\n",
+            "perl aws --install","\n",
+            
+            "s3get ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "aws s3 cp s3://ts-prod/mongo/setupMongoServerFromS3.sh /home/ec2-user/setupMongoServerFromS3.sh","\n",
+            "chmod 755 /home/ec2-user/setupMongoServerFromS3.sh\n",
+            "/home/ec2-user/setupMongoServerFromS3.sh\n",
+            
+            "MY_IP=`(curl http://169.254.169.254/latest/meta-data/local-ipv4)`\n",
+            
+            "s3get ts-prod/mongo/mongoReplicaConfig.sh /home/ec2-user/mongoReplicaConfig.sh","\n",
+            "aws s3 cp s3://ts-prod/mongo/mongoReplicaConfig.sh /home/ec2-user/mongoReplicaConfig.sh","\n",
+            "chmod 755 /home/ec2-user/mongoReplicaConfig.sh\n",
+            "/home/ec2-user/mongoReplicaConfig.sh $MY_IP ", 
+              { "Fn::GetAtt" : ["mongoReplicaA1", "PrivateIp"] }," ", 
+              { "Fn::GetAtt" : ["mongoReplicaA2", "PrivateIp"] }," ", 
+              { "Fn::GetAtt" : ["mongoReplicaC1", "PrivateIp"] }," ", 
+              "\n",
+
+            "# All is well so signal success\n",
+            "/opt/aws/bin/cfn-signal -e 0 -r \"mongoReplicaC2 setup complete\" '", { "Ref" : "WaitHandleC2" }, "'\n"
+
+            ]] }
+         }
+      }
+    },
+    "ElasticIPC2" : {
+       "Type" : "AWS::EC2::EIP",
+       "Properties" : {
+          "InstanceId" : { "Ref" : "mongoReplicaC2" },
+          "Domain" : "vpc"
+       }
+    },
+    "WaitHandleC2" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "WaitConditionC2" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "mongoReplicaC2",
+      "Properties" : {
+        "Handle" : {"Ref" : "WaitHandleC2"},
+        "Timeout" : "1600"
+      }
+    },
+    
+    "mongoVolumeC2" : {
+      "Type" : "AWS::EC2::Volume",
+      "Properties" : {
+        "SnapshotId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "SnapshotId" ]},
+        "AvailabilityZone" : { "Ref" : "AZ2" },
+        "Tags" : [{ "Key" : "Name", "Value" : "mongoVolumeC2" }]
+      }
+    },
+
+    "mongoProdReplicaSetSecurityGroupBase" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "VpcId" : { "Ref" : "VpcId" },
+        "GroupDescription" : "Enable SSH port 22 and mongo traffic port 27017 to AppServer",
+        "SecurityGroupEgress" : [ 
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+            "DestinationSecurityGroupId" : { "Ref" : "AppServerSecurityGroupId" }
+          },
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "27017",
+            "ToPort" : "27017",
+            "DestinationSecurityGroupId" : { "Ref" : "AppServerSecurityGroupId" }
+          }, 
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "80",
+            "ToPort" : "80",
+            "CidrIp": "0.0.0.0/0"
+          }, 
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "443",
+            "ToPort" : "443",
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "SecurityGroupIngress" : [ 
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "22",
+            "ToPort" : "22",
+            "SourceSecurityGroupId" : { "Ref" : "AppServerSecurityGroupId" }
+          },
+          {
+            "IpProtocol" : "tcp",
+            "FromPort" : "27017",
+            "ToPort" : "27017",
+            "SourceSecurityGroupId" : { "Ref" : "AppServerSecurityGroupId" }
+          }
+        ]
+      }
+    },
+    "mongoProdReplicaSetSecurityGroupInternalEgressSSH": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "DependsOn" : "mongoProdReplicaSetSecurityGroupBase",
+      "Properties": {
+        "GroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "DestinationSecurityGroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" }
+      }
+    },
+    "mongoProdReplicaSetSecurityGroupInternalEgress27017": {
+      "Type": "AWS::EC2::SecurityGroupEgress",
+      "DependsOn" : "mongoProdReplicaSetSecurityGroupBase",
+      "Properties": {
+        "GroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" },
+        "IpProtocol": "tcp",
+        "FromPort": "27017",
+        "ToPort": "27017",
+        "DestinationSecurityGroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" }
+      }
+    },
+    "mongoProdReplicaSetSecurityGroupInternalIngressSSH": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "DependsOn" : "mongoProdReplicaSetSecurityGroupBase",
+      "Properties": {
+        "GroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" },
+        "IpProtocol": "tcp",
+        "FromPort": "22",
+        "ToPort": "22",
+        "SourceSecurityGroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" }
+      }
+    },
+    "mongoProdReplicaSetSecurityGroupInternalIngress27017": {
+      "Type": "AWS::EC2::SecurityGroupIngress",
+      "DependsOn" : "mongoProdReplicaSetSecurityGroupBase",
+      "Properties": {
+        "GroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" },
+        "IpProtocol": "tcp",
+        "FromPort": "27017",
+        "ToPort": "27017",
+        "SourceSecurityGroupId": { "Ref": "mongoProdReplicaSetSecurityGroupBase" }
+      }
+    }
+  },
+
+  "Outputs" : {
+    "InstanceIdA1" : {
+      "Description" : "InstanceId of the newly created EC2 instance",
+      "Value" : { "Ref" : "mongoReplicaA1" }
+    },
+    "AZA1" : {
+      "Description" : "Availability Zone of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA1", "AvailabilityZone" ] }
+    },
+    "PublicIPA1" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA1", "PublicIp" ] }
+    },
+    "PrivateIPA1" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA1", "PrivateIp" ] }
+    },
+    "PrivateDnsNameA1" : {
+      "Description" : "PrivateDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA1", "PrivateDnsName" ] }
+    },
+    "PublicDnsNameA1" : {
+      "Description" : "PublicDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA1", "PublicDnsName" ] }
+    },
+    
+    "InstanceIdA2" : {
+      "Description" : "InstanceId of the newly created EC2 instance",
+      "Value" : { "Ref" : "mongoReplicaA2" }
+    },
+    "AZA2" : {
+      "Description" : "Availability Zone of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA2", "AvailabilityZone" ] }
+    },
+    "PublicIPA2" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA2", "PublicIp" ] }
+    },
+    "PrivateIPA2" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA2", "PrivateIp" ] }
+    },
+    "PrivateDnsNameA2" : {
+      "Description" : "PrivateDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA2", "PrivateDnsName" ] }
+    },
+    "PublicDnsNameA2" : {
+      "Description" : "PublicDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaA2", "PublicDnsName" ] }
+    },
+    
+    "InstanceIdC1" : {
+      "Description" : "InstanceId of the newly created EC2 instance",
+      "Value" : { "Ref" : "mongoReplicaC1" }
+    },
+    "AZC1" : {
+      "Description" : "Availability Zone of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC1", "AvailabilityZone" ] }
+    },
+    "PublicIPC1" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC1", "PublicIp" ] }
+    },
+    "PrivateIPC1" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC1", "PrivateIp" ] }
+    },
+    "PrivateDnsNameC1" : {
+      "Description" : "PrivateDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC1", "PrivateDnsName" ] }
+    },
+    "PublicDnsNameC1" : {
+      "Description" : "PublicDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC1", "PublicDnsName" ] }
+    },
+    
+    "InstanceIdC2" : {
+      "Description" : "InstanceId of the newly created EC2 instance",
+      "Value" : { "Ref" : "mongoReplicaC2" }
+    },
+    "AZC2" : {
+      "Description" : "Availability Zone of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC2", "AvailabilityZone" ] }
+    },
+    "PublicIPC2" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC2", "PublicIp" ] }
+    },
+    "PrivateIPC2" : {
+      "Description" : "Public IP address of the newly created EC2 instance",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC2", "PrivateIp" ] }
+    },
+    "PrivateDnsNameC2" : {
+      "Description" : "PrivateDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC2", "PrivateDnsName" ] }
+    },
+    "PublicDnsNameC2" : {
+      "Description" : "PublicDnsName",
+      "Value" : { "Fn::GetAtt" : [ "mongoReplicaC2", "PublicDnsName" ] }
+    }
+    
+  }
+}

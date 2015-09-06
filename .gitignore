@@ -1,0 +1,23 @@
+target/
+repos/
+bin/
+build/
+*.releaseBackup
+*.class
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+## generic files to ignore
+*~
+*.lock
+*.DS_Store
+*.swp
+*.out
+.gradle/
+gradle-app.setting
+.classpath
+.project
+.settings/

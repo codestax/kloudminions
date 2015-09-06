@@ -1,0 +1,16 @@
+{
+	"type": "sequence",
+	"nodes": [{
+			"type": "action",
+			"action": "iac_minion:processArchiveFiles",
+			"iac.archive_path": "src/test/groovy/resources/test_files/archive1",
+			"iac.archive_target_env": "ci"
+		},{
+			"type": "action",
+			"action": "cloud_formation_minion:deleteStack"
+		},{
+			"type": "action",
+			"action": "cloud_formation_minion:createStack",
+			"cf_script_filename": {"ref": "iac.archive_cloudformation_tmpl_text"}
+		}]
+}

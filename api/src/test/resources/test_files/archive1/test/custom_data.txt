@@ -1,0 +1,6 @@
+s3get minion-deployments/development/socialhire-config-elbdev.groovy /etc/tomcat7/socialhire-config-elbdev.groovy
+s3get minion-deployments/development/sampleJobs.xlsx /etc/tomcat7/sampleJobs.xlsx
+chmod 400 /etc/tomcat7/socialhire-config-elbdev.groovy 
+chown tomcat7:tomcat7 /etc/tomcat7/socialhire-config-elbdev.groovy
+sudo chmod 400 /etc/tomcat7/sampleJobs.xlsx
+sudo chown tomcat7:tomcat7 /etc/tomcat7/sampleJobs.xlsx

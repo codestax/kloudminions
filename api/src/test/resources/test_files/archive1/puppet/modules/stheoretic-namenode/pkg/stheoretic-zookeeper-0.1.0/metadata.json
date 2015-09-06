@@ -1,0 +1,13 @@
+{
+  "name": "stheoretic-zookeeper",
+  "version": "0.1.0",
+  "author": "stheoretic",
+  "summary": "Zookeeper server configuration",
+  "license": "GPL 2.0",
+  "source": "github",
+  "project_page": "scache.com",
+  "issues_url": "bugs.com",
+  "dependencies": [
+  
+  ]
+}

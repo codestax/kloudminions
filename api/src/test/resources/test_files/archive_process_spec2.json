@@ -1,0 +1,11 @@
+{
+	"type": "sequence",
+	"nodes": [{
+			"type": "action",
+			"action": "cloud_formation_minion:deleteStack"
+		},{
+			"type": "action",
+			"action": "cloud_formation_minion:createStack",
+			"cf_script_filename": "/Users/rashadmoore/dev/projects/minions/cli/practice/rashad_basic_cf.json"
+		}]
+}

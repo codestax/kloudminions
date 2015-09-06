@@ -1,0 +1,29 @@
+
+apply plugin: 'application'
+
+mainClassName = 'com.cm.cli.CommandLineInterface'
+
+dependencies {
+    compile project(':api')
+    compile 'commons-cli:commons-cli:1.2'
+	compile 'org.codehaus.groovy:groovy-all:2.3.3'
+	compile 'com.amazonaws:aws-java-sdk:1.8.6'
+	compile 'com.google.guava:guava:15.0'
+	compile 'org.apache.commons:commons-lang3:3.3.2'
+	
+	compile group: 'junit', name: 'junit', version: '4.11'
+}
+
+task jarWithDependencies(type: Jar) {
+	archiveName 'cloudminions.jar'
+    classifier 'jar-with-dependencies'
+	from files(sourceSets.main.output)
+	from configurations.runtime.collect { zipTree(it) }
+
+	manifest { attributes 'Main-Class': mainClassName }
+}
+
+artifacts {
+	archives jarWithDependencies
+}
+

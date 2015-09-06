@@ -1,0 +1,16 @@
+{
+            "name":"Sample App",
+            "environment": "development",
+            "provider": "aws",
+            "type":"tomcat",
+            "base_ami":"ami-4deeb724",
+            "db_ami":"ami-4c53337c",
+            "aws_role_name" : "chef_client_s3_role",
+            "key_pair":"stc-admin",
+            "security_group": "tomcat-node",
+            "instance_type":"t1.micro",
+            "s3_bucket" : "minion-deployments",
+            "user_data":"custom_data.txt",
+            "custom_cloud_formation" : "custom_script.json",
+            "wars" : ["socialhire.war"]
+}
