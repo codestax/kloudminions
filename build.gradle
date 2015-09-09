@@ -17,7 +17,7 @@ subprojects {
     }
 
     dependencies {
-        compile 'org.codehaus.groovy:groovy-all:2.1.7'
+        compile 'org.codehaus.groovy:groovy-all:2.4.4'
         testCompile 'junit:junit:4.+'
         testCompile 'org.hamcrest:hamcrest-all:1.3'
     }
