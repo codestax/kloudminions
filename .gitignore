@@ -6,8 +6,8 @@ build/
 *.class
 
 # Package Files #
-*.jar
-*.war
+#*.jar
+#*.war
 *.ear
 
 ## generic files to ignore
