@@ -14,8 +14,8 @@ dependencies {
 	compile group: 'junit', name: 'junit', version: '4.11'
 }
 
-task jarWithDependencies(type: Jar) {
-	archiveName 'cloudminions.jar'
+task fatjar(type: Jar) {
+	archiveName 'cloudminionsAllDeps.jar'
     classifier 'jar-with-dependencies'
 	from files(sourceSets.main.output)
 	from configurations.runtime.collect { zipTree(it) }
@@ -24,6 +24,6 @@ task jarWithDependencies(type: Jar) {
 }
 
 artifacts {
-	archives jarWithDependencies
+	archives fatjar
 }
 
