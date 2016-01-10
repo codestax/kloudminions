@@ -14,9 +14,10 @@ import com.amazonaws.services.cloudformation.model.DescribeStacksResult
 import com.amazonaws.services.cloudformation.model.StackStatus
 import com.cm.context.Context
 import com.cm.minions.AbstractCloudMinion
+import com.cm.minions.AbstractMinion
 
 
-class CloudFormationMinion extends AbstractCloudMinion {
+class CloudFormationMinion extends AbstractMinion {
 	
 	
 	public CloudFormationMinion(Context context) {
@@ -50,6 +51,7 @@ class CloudFormationMinion extends AbstractCloudMinion {
 		File cf_file = new File(cf_script_filename)
 		String cf_template = cf_file.getText()
 		createRequest.setTemplateBody(cf_template)
+		createRequest.setCapabilities(Arrays.asList("CAPABILITY_IAM"))
 		
 		CreateStackResult createStackResult = cloudFormationClient.createStack(createRequest)
 		
@@ -168,6 +170,6 @@ class CloudFormationMinion extends AbstractCloudMinion {
 			return false
 		}
 	} // END stackCompleted Method
-	
-	
+
+
 } // END CloudFormationMinion class

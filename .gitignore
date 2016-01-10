@@ -2,6 +2,7 @@ target/
 repos/
 bin/
 build/
+.idea/
 *.releaseBackup
 *.class
 
@@ -21,3 +22,6 @@ gradle-app.setting
 .classpath
 .project
 .settings/
+.groovy/
+*.iml
+gradle/
