@@ -11,13 +11,14 @@ import com.amazonaws.services.cloudformation.model.CreateStackResult
 import com.amazonaws.services.cloudformation.model.DeleteStackRequest
 import com.amazonaws.services.cloudformation.model.DescribeStacksRequest
 import com.amazonaws.services.cloudformation.model.DescribeStacksResult
+import com.amazonaws.services.cloudformation.model.Parameter
 import com.amazonaws.services.cloudformation.model.StackStatus
 import com.cm.context.Context
 import com.cm.minions.AbstractCloudMinion
 import com.cm.minions.AbstractMinion
 
 
-class CloudFormationMinion extends AbstractMinion {
+public class CloudFormationMinion extends AbstractMinion {
 	
 	
 	public CloudFormationMinion(Context context) {
@@ -41,20 +42,27 @@ class CloudFormationMinion extends AbstractMinion {
 		
 		String accessKey = this.context.get("aws_access_key")
 		String secretKey = this.context.get("aws_secret_key")
+
+		def cfParametersFromContext = this.context.get("cf_parameters")
+		def cfParameters = []
+
+		cfParametersFromContext.each {key, value -> cfParameters.add(new Parameter().withParameterKey("${key}").withParameterValue("${value}"))}
+
 		AWSCredentials awsCredentials = new BasicAWSCredentials(accessKey, secretKey)
 		AmazonCloudFormationClient cloudFormationClient = new AmazonCloudFormationClient(awsCredentials)
-		
+
 		def createRequest = new CreateStackRequest()
 		createRequest.setStackName(stackName)
-		
+
 		String cf_script_filename = this.context.get("cf_script_filename")
 		File cf_file = new File(cf_script_filename)
 		String cf_template = cf_file.getText()
 		createRequest.setTemplateBody(cf_template)
 		createRequest.setCapabilities(Arrays.asList("CAPABILITY_IAM"))
-		
+		createRequest.setParameters(cfParameters)
+
 		CreateStackResult createStackResult = cloudFormationClient.createStack(createRequest)
-		
+
 		this.waitUntil(this.&stackCompleted, true)
 		println "Stack " + stackName + " Created!"
 		
